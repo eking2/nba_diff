@@ -27,3 +27,5 @@ else:
     seasonyear = scoreboard.query("gameid == @gameid")['seasonYear'].values[0]
 
 
+    print(gameid)
+    print(seasonyear)
