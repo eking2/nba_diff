@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 from dataclasses import dataclass
 from copy import deepcopy
+from typing import Optional
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 # namedtuple will not work, can't replace attribute values or set defaults
 @dataclass
@@ -180,6 +183,29 @@ def get_rotations(pbp: dict, players: dict) -> dict:
     return players_copy
 
 
+def get_player_ingame(rotation_df: pd.DataFrame) -> pd.DataFrame:
+
+    '''time windows for when each player is in game'''
+    
+    # need time span for broken hbar, plots x + xwidth
+    ingame_df = rotation_df.query("ingame == 1") 
+    ingame_df = ingame_df.assign(xwidth = lambda x: x['end'] - x['start'])
+    
+    player_times = []
+    for player_id in rotation_df['id'].unique():
+        subset = ingame_df.query("id == @player_id")
+        name = subset[['fn', 'ln']].values[0]  # np array
+        name = ' '.join(list(map(str, name)))
+        times = subset[['start', 'xwidth']].values.tolist()
+        team = subset['team'].tolist()[0]
+        
+        player_times.append([player_id, name, team, times])
+        
+    df = pd.DataFrame(player_times, columns=['id', 'name', 'team', 'times'])
+    
+    return df
+
+
 @st.cache
 def get_scoreboard(year: str, month: str, date: str) -> pd.DataFrame:
     
@@ -285,16 +311,78 @@ def merge_rotations(players: dict) -> dict:
 ###############################################################################
 # plotting
 
-def plot_differential():
+def plot_differential(diff: np.ndarray, 
+                      game_score: game, 
+                      home_color: str, 
+                      visit_color: str, 
+                      ax: Optional[mpl.axes.SubplotBase] = None) -> None:
 
     '''plot point differentials'''
-    pass
+
+    if ax is None:
+        ax = plt.gca()
+
+    p = ax.step(diff[:, 0], diff[:, 1], where='mid', color='k', alpha=0.3)
+
+    # split into periods
+    x_la = ['Q1', 'Q2', 'Q3', 'Q4']
+    x_ra = [i*12*60 for i in range(len(x_la))]
+    ax.set_xticks(x_ra)
+    ax.set_xticklabels(x_la)
+
+    # add horizontal 0
+    ax.axhline(0, color='k', alpha=0.5)
+
+    # fill steps with different colors
+    ax.fill_between(diff[:, 0], diff[:, 1], step='mid', alpha=0.3, where=diff[:, 1] >= 0, 
+                    facecolor=home_color, interpolate=True, label=game_score.home)
+    ax.fill_between(diff[:, 0], diff[:, 1], step='mid', alpha=0.3, where=diff[:, 1] <= 0, 
+                    facecolor=visit_color, interpolate=True, label=game_score.visiting)
+
+    ax.grid(alpha=0.2)
+    ax.set_axisbelow(True)
+    ax.set_ylabel('Differential')
+    ax.legend()
+    
+    ax.set_title(f'{game_score.home} vs. {game_score.visiting}\n{game_score.home_score} - {game_score.visiting_score}', size=13)
+    
+    # set symmetic ylim
+    y_max = max(list(map(abs, plt.gca().get_ylim())))
+    ax.set_ylim([-y_max, y_max])
 
 
-def plot_rotation():
-
+def plot_rotation(ingame_df: pd.DataFrame, 
+                  team: str, 
+                  color: str, 
+                  ax: Optional[mpl.axes.SubplotBase] = None) -> None:
+    
     '''plot rotation chart'''
-    pass
+    
+    if ax is None:
+        ax = plt.gca()
+    
+    subset = ingame_df.query("team == @team")
+    
+    # idx is the df index
+    for i, (idx, row) in enumerate(subset.iterrows()):
+        times = row['times']
+        ax.broken_barh(times, (i-0.25, 0.5), color=color, edgecolor='k', alpha=0.5)
+        
+    # split into periods
+    x_la = ['Q1', 'Q2', 'Q3', 'Q4']
+    x_ra = [i*12*60 for i in range(len(x_la))]
+    ax.set_xticks(x_ra)
+    ax.set_xticklabels(x_la)
+    
+    # y label player names
+    y_la = subset['name'].values
+    y_ra = np.arange(len(y_la))
+    ax.set_yticks(y_ra)
+    ax.set_yticklabels(y_la, size=12)
+    
+    ax.invert_yaxis()
+    ax.grid(alpha=0.2)
+    ax.set_axisbelow(True)
 
 
 ###############################################################################
